@@ -1,0 +1,7 @@
+names:
+  0: Fire Extinguisher
+  1: Toolbox
+  2: Oxygen Tank
+test: D:\HackByte_Dataset\dataset\test\images
+train: D:\HackByte_Dataset\dataset\train\images
+val: D:\HackByte_Dataset\dataset\val\images
