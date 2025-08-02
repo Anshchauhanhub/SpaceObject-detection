@@ -26,8 +26,9 @@ Our YOLOv8-based model achieves exceptional performance that exceeds industry st
 | **mAP@0.5** | **93.40%** | 50-60% | 🏆 Exceptional |
 | **Precision** | **98.04%** | 70-80% | 🏆 Outstanding |
 | **Recall** | **88.06%** | 60-70% | 🏆 Excellent |
-| **Inference Speed** | **11.9ms** | 
-  Built with ❤️ for astronaut safety
+| **Inference Speed** | **11.9ms** | <20ms | 🏆 Real time |
+  
+Built with ❤️ for astronaut safety
   
     🌟 Star this repo - 
     🐛 Report Bug - 
