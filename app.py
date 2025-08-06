@@ -76,12 +76,12 @@ st.markdown("""
         font-size: 12px;
     }
     
-    .video-header {
-        background: #2a5298;
-        color: white;
-        padding: 5px 10px;
-        border-radius: 5px 5px 0 0;
-        margin: -10px -10px 10px -10px;
+    .model-info {
+        background: #e8f5e8;
+        border: 2px solid #4caf50;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
         font-weight: bold;
     }
     
@@ -121,21 +121,88 @@ if 'video_files' not in st.session_state:
 if 'video_processing' not in st.session_state:
     st.session_state.video_processing = {'feed1': False, 'feed2': False, 'feed3': False}
 
-# Load Model with better error handling
+# AUTO-LOAD MODEL FUNCTION - FOR YOUR CUSTOM MODEL
 @st.cache_resource
-def load_detection_model(model_path=None):
+def load_detection_model():
+    """
+    Automatically load your custom model with fallback to default
+    """
+    # Define possible paths for your custom model
+    custom_model_paths = [
+        'spaceship_equipment_detector_best.pt',  # Place your model here with this name
+        'custom_model.pt',      # Alternative name
+        'best.pt',              # Common training output name
+        'models/spacecraft_model.pt',  # In models folder
+        'models/best.pt',       # In models subfolder
+        './spacecraft_model.pt', # Explicit current directory
+    ]
+    
     try:
-        if model_path and os.path.exists(model_path):
-            model = YOLO(model_path)
-            return model, f"Custom model: {os.path.basename(model_path)}"
-        else:
-            model = YOLO('yolov8n.pt')
-            return model, "YOLOv8n (default)"
+        # First, try to load your custom model from any of the paths
+        for model_path in custom_model_paths:
+            if os.path.exists(model_path):
+                file_size = os.path.getsize(model_path)
+                if file_size > 1000:  # Check if file is not corrupted
+                    try:
+                        model = YOLO(model_path)
+                        st.success(f"🚀 **Custom Spacecraft Model Loaded!**")
+                        return model, f"Custom Spacecraft Model: {os.path.basename(model_path)}"
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not load {model_path}: {str(e)}")
+                        continue
+                else:
+                    st.warning(f"⚠️ {model_path} appears corrupted (size: {file_size} bytes)")
+        
+        # If no custom model found, inform user and use default
+        st.info("🔍 **Custom model not found in expected locations.**")
+        st.info("📋 **Expected locations:**")
+        for path in custom_model_paths:
+            st.write(f"   • `{path}`")
+        
+        # Fallback to default YOLO model
+        st.warning("🔄 Loading default YOLOv8n model...")
+        
+        # Clear any corrupted default model
+        default_model_path = 'yolov8n.pt'
+        if os.path.exists(default_model_path):
+            file_size = os.path.getsize(default_model_path)
+            if file_size < 5000000:  # YOLOv8n should be ~6.2MB
+                st.warning("🔄 Removing corrupted default model, will re-download...")
+                os.remove(default_model_path)
+        
+        model = YOLO('yolov8n.pt')
+        st.info("ℹ️ Using default YOLOv8n model (general objects)")
+        return model, "YOLOv8n (default - general objects)"
+        
     except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
-        return None, f"Error: {str(e)}"
+        error_msg = str(e)
+        if "failed finding central directory" in error_msg:
+            st.error("🔄 Model file corrupted. Removing and will re-download...")
+            # Remove corrupted files
+            for file_to_check in ['yolov8n.pt'] + custom_model_paths:
+                if os.path.exists(file_to_check):
+                    try:
+                        os.remove(file_to_check)
+                        st.info(f"Removed corrupted file: {file_to_check}")
+                    except:
+                        pass
+            return None, "Corrupted model removed - please refresh page"
+        else:
+            st.error(f"❌ Error loading model: {str(e)}")
+            return None, f"Error: {str(e)}"
 
-class_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light']
+# Custom class names for your spacecraft model
+SPACECRAFT_CLASS_NAMES = [
+    'Fire Extinguisher',
+    'Oxygen Tank', 
+    'Toolbox',
+    'Emergency Kit',
+    'Communication Device',
+    'Safety Equipment'
+]
+
+# Default YOLO class names (fallback)
+DEFAULT_CLASS_NAMES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light']
 
 # Header
 st.markdown("""
@@ -145,36 +212,65 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Load model
+# Load model automatically
 model, model_info = load_detection_model()
+
+# Determine which class names to use
+if "Custom Spacecraft Model" in model_info:
+    class_names = SPACECRAFT_CLASS_NAMES
+else:
+    class_names = DEFAULT_CLASS_NAMES
 
 # Sidebar Control Panel
 with st.sidebar:
     st.header("🎛️ Control Panel")
     
-    # Debug Mode Toggle
-    st.session_state.debug_mode = st.checkbox("🐛 Debug Mode", value=st.session_state.debug_mode)
+    if model:
+        if "Custom Spacecraft Model" in model_info:
+            st.success(f"🚀 {model_info}")
+            st.info("✨ **Spacecraft-specific detection active!**")
+        else:
+            st.warning(f"⚠️ {model_info}")
+            st.info("💡 **Tip:** Place your trained model as `spacecraft_model.pt` for auto-loading")
+    else:
+        st.error(f"❌ {model_info}")
     
-    # Model Upload Section
-    st.subheader("🤖 AI Model Setup")
-    uploaded_model = st.file_uploader(
-        "Upload YOLO Model (.pt file):",
-        type=['pt'],
-        help="Upload your trained YOLO model"
-    )
-    
-    if uploaded_model is not None:
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as tmp_file:
-                tmp_file.write(uploaded_model.read())
-                model_path = tmp_file.name
-            model, model_info = load_detection_model(model_path)
-        except Exception as e:
-            st.error(f"Error processing uploaded model: {str(e)}")
-    
-    st.success(f"📝 {model_info}")
+    # Optional model upload (as backup)
+    st.subheader("🔄 Override Model")
+    with st.expander("Upload Different Model"):
+        uploaded_model = st.file_uploader(
+            "Upload YOLO Model (.pt file):",
+            type=['pt'],
+            help="Upload a different model to override the auto-loaded one"
+        )
+        
+        if uploaded_model is not None:
+            try:
+                file_content = uploaded_model.read()
+                if len(file_content) > 1000:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pt') as tmp_file:
+                        tmp_file.write(file_content)
+                        temp_model_path = tmp_file.name
+                    
+                    try:
+                        temp_model = YOLO(temp_model_path)
+                        model = temp_model
+                        model_info = f"Uploaded: {uploaded_model.name}"
+                        st.success("✅ Override model loaded successfully!")
+                        st.rerun()
+                    except Exception as validation_error:
+                        st.error(f"❌ Override model validation failed: {str(validation_error)}")
+                        if os.path.exists(temp_model_path):
+                            os.remove(temp_model_path)
+                else:
+                    st.error("❌ Uploaded file appears to be corrupted or empty")
+            except Exception as e:
+                st.error(f"Error processing uploaded model: {str(e)}")
     
     st.markdown("---")
+    
+    # Debug Mode Toggle
+    st.session_state.debug_mode = st.checkbox("🐛 Debug Mode", value=st.session_state.debug_mode)
     
     # Emergency Button
     if st.button("🚨 EMERGENCY ALERT 🚨", key="emergency_btn"):
@@ -244,7 +340,7 @@ with st.sidebar:
     # Detection Settings
     st.header("⚙️ Detection Settings")
     confidence_threshold = st.slider("Confidence Threshold:", 0.1, 0.95, 0.25, 0.05)
-    detection_frequency = st.slider("Detection Frequency (fps):", 1, 10, 3)  # Reduced for stability
+    detection_frequency = st.slider("Detection Frequency (fps):", 1, 10, 3)
     
     # Global Controls
     st.subheader("🎛️ Global Controls")
@@ -307,7 +403,7 @@ def detect_objects_in_frame(frame, feed_name):
             st.error(f"Detection error in {feed_name}: {str(e)}")
         return [], frame
 
-# Process single video feed - FIXED VERSION
+# Process single video feed - FIXED FOR CONTINUOUS PLAYBACK
 def process_video_feed(feed_name, video_file, video_container, detection_container):
     if not video_file or not st.session_state.monitoring_active[feed_name]:
         return
@@ -356,16 +452,16 @@ def process_video_feed(feed_name, video_file, video_container, detection_contain
             detection_container.info(f"📹 {feed_name.upper()}: {total_frames} frames, {fps:.1f} FPS")
         
         frame_count = 0
-        max_frames = min(100, total_frames) if total_frames > 0 else 100  # Limit frames for demo
         
-        # Process frames
-        while (cap.isOpened() and 
-               st.session_state.monitoring_active[feed_name] and 
-               frame_count < max_frames):
+        # FIXED: Continuous playback - removed frame limit
+        while (cap.isOpened() and st.session_state.monitoring_active[feed_name]):
             
             ret, frame = cap.read()
             if not ret:
-                break
+                # FIXED: Loop video for continuous playback
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset to beginning
+                frame_count = 0
+                continue
                 
             frame_count += 1
             
@@ -416,10 +512,6 @@ def process_video_feed(feed_name, video_file, video_container, detection_contain
             if not st.session_state.monitoring_active[feed_name]:
                 break
         
-        # Processing complete
-        if frame_count >= max_frames:
-            video_container.success(f"✅ {feed_name.upper()}: Processing complete ({frame_count} frames)")
-        
     except Exception as e:
         error_msg = f"❌ {feed_name.upper()}: Error - {str(e)}"
         video_container.error(error_msg)
@@ -440,19 +532,21 @@ def process_video_feed(feed_name, video_file, video_container, detection_contain
 # Main Content Area - Three Video Feeds
 st.header("📺 Multi-Feed Monitoring Dashboard")
 
+# Calculate system status values - FIXED: Define before use
+model_status = "🟢 Loaded" if model else "🔴 Error"
+uploaded_count = sum(1 for v in st.session_state.video_files.values() if v is not None)
+active_count = sum(1 for v in st.session_state.monitoring_active.values() if v)
+emergency_status = "🚨 ACTIVE" if st.session_state.emergency_mode else "✅ NORMAL"
+
 # Show system status
 col_sys1, col_sys2, col_sys3, col_sys4 = st.columns(4)
 with col_sys1:
-    model_status = "🟢 Loaded" if model else "🔴 Error"
     st.markdown(f"**Model:** {model_status}")
 with col_sys2:
-    uploaded_count = sum(1 for v in st.session_state.video_files.values() if v is not None)
     st.markdown(f"**Videos:** {uploaded_count}/3")
 with col_sys3:
-    active_count = sum(1 for v in st.session_state.monitoring_active.values() if v)
     st.markdown(f"**Active:** {active_count}/3")
 with col_sys4:
-    emergency_status = "🚨 ACTIVE" if st.session_state.emergency_mode else "✅ NORMAL"
     st.markdown(f"**Status:** {emergency_status}")
 
 st.markdown("---")
